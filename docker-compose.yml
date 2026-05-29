@@ -1,0 +1,115 @@
+name: hospital-calling
+
+# Shared config for the three python services (django / celery-worker /
+# celery-beat). The server image is built ONCE by the `django` service (it
+# carries the `build:` block below); the celery services reference the same
+# `image:` and reuse it. If all three declared `build:`, `docker compose up
+# --build` would try to build the identical tag in parallel and fail with
+# `image "...server:latest": already exists`.
+x-server: &server
+  image: hospital-calling/server:latest
+  env_file:
+    - ./server/.local-setup/.env.local
+  environment:
+    # External API keys flow in from the repo-root .env when set; blank
+    # otherwise (the read-only demo needs none of them).
+    GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY:-}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    BLANDAI_API_KEY: ${BLANDAI_API_KEY:-}
+    PYTHONUNBUFFERED: "1"
+  volumes:
+    - ./server:/app
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: hc-postgres
+    environment:
+      POSTGRES_USER: hospcall
+      POSTGRES_PASSWORD: hospcall
+      POSTGRES_DB: hospcall
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # Host port 5544 (5432 is often taken by another local postgres);
+      # in-cluster the service still listens on 5432, so DB_HOST=postgres works.
+      - "5544:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hospcall -d hospcall"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: hc-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # API server. Applies migrations (which also load the demo seed data) before
+  # serving, so a single `make up` gives a fully-populated app.
+  django:
+    <<: *server
+    build:
+      context: ./server
+    container_name: hc-django
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py runserver 0.0.0.0:8002"
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health/')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  celery-worker:
+    <<: *server
+    container_name: hc-celery-worker
+    command: celery -A hospcall worker -Q celery,sourcing_search -Ofair --concurrency=2 -l INFO
+    depends_on:
+      django:
+        condition: service_healthy
+
+  celery-beat:
+    <<: *server
+    container_name: hc-celery-beat
+    command: celery -A hospcall beat -l INFO --schedule /tmp/celerybeat-schedule
+    depends_on:
+      django:
+        condition: service_healthy
+
+  backoffice:
+    build:
+      context: ./backoffice
+    image: hospital-calling/backoffice:latest
+    container_name: hc-backoffice
+    environment:
+      # Browser → API (host-published port).
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8002
+      # Server-side proxy (Next container → django container) for writes.
+      API_BASE_URL: http://django:8002
+      # Must equal the server's BACKOFFICE_API_TOKEN.
+      BACKOFFICE_API_TOKEN: local-dev-token
+      # Demo login. user:password pairs, comma-separated.
+      BASIC_AUTH_USERS: ${BASIC_AUTH_USERS:-demo:hospcall2026}
+      SESSION_SECRET: ${SESSION_SECRET:-demo-session-secret-change-me-please}
+    ports:
+      - "3000:3000"
+    depends_on:
+      django:
+        condition: service_healthy
+
+volumes:
+  pgdata:

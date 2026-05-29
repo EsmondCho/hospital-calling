@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+
+# Django
+*.log
+db.sqlite3
+staticfiles/
+/media/
+
+# Docker datastore
+.datastore/
+
+# Local secrets / overrides (never commit real values)
+# The trailing `*` also covers the `.env.local.secrets.tmp` written by
+# `make proddb-env` mid-write — a SIGKILL before its `mv` must not leave
+# prod credentials in a git-trackable file.
+.local-setup/.env.local.secrets*
+.local-setup/.env.local.local
+.local-setup/.env.prod.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code (personal config)
+CLAUDE.local.md
+
+# Working documents (archived elsewhere, not committed)
+docs/research.md
+docs/plan.md
+docs/tmp/
+.omc/

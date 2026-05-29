@@ -1,0 +1,106 @@
+[project]
+name = "hospcall-server"
+version = "0.1.0"
+requires-python = ">=3.13"
+
+dependencies = [
+    "django>=5.2,<6.0",
+    "django-cors-headers>=4.6",
+    "djangorestframework>=3.15",
+    "django-extensions>=3.2",
+    "psycopg[binary]>=3.2",
+    "celery[redis]>=5.4",
+    "redis>=5.2",
+    "django-celery-results>=2.5",
+    "django-celery-beat>=2.7",
+    "gunicorn>=23",
+    "uvicorn[standard]>=0.34",
+    "structlog>=24",
+    "boto3>=1.35",
+    "httpx>=0.28",
+    "python-dotenv>=1.0",
+    "croniter>=6.2.2",
+    "pydantic>=2.9",
+    "anthropic>=0.40",
+]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "ARG", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ARG", "F841", "RUF059"]
+"**/migrations/**" = ["ALL"]
+"**/serializers.py" = ["RUF012"]
+"**/models.py" = ["RUF012"]
+"**/views.py" = ["ARG001", "ARG002", "RUF012"]
+"infrastructure/**" = ["ARG001", "ARG002"]
+
+[tool.ruff.format]
+quote-style = "preserve"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-django>=4.9",
+    "pytest-mock>=3.14",
+    "factory-boy>=3.3",
+    "ipython>=8",
+    "werkzeug>=3",
+    "import-linter>=2.11",
+    "mypy>=1.20.0",
+    "django-stubs>=6.0.2",
+    "djangorestframework-stubs>=3.16.9",
+    "celery-types>=0.26.0",
+]
+
+[tool.importlinter]
+root_packages = ["api", "services", "hospital", "prompt", "calling", "schedule", "utils"]
+
+[[tool.importlinter.contracts]]
+name = "Services must not import from API layer"
+type = "forbidden"
+source_modules = ["services"]
+forbidden_modules = ["api"]
+
+[[tool.importlinter.contracts]]
+name = "Model modules must not import from API or Services"
+type = "forbidden"
+source_modules = ["hospital", "prompt", "calling", "schedule", "sourcing"]
+forbidden_modules = ["api", "services"]
+ignore_imports = [
+    # tasks.py is usecase-layer (same shape as api/usecases.py)
+    "calling.tasks -> services.internal.hospcall_calling.service",
+    "calling.tasks -> services.external.blandai.client",
+]
+
+[[tool.importlinter.contracts]]
+name = "Utils must not import app code"
+type = "forbidden"
+source_modules = ["utils"]
+forbidden_modules = ["api", "services", "hospital", "prompt", "calling"]
+
+[[tool.importlinter.contracts]]
+name = "External services are independent"
+type = "independence"
+modules = [
+    "services.external.blandai",
+    "services.external.google_places",
+    "services.external.ssm",
+    "services.external.anthropic",
+]
+
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+ignore_missing_imports = true
+check_untyped_defs = false
+warn_return_any = false
+warn_unused_configs = true
+exclude = ["tests/", "migrations/", "infrastructure/"]
+
+[tool.django-stubs]
+django_settings_module = "hospcall.settings"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "hospcall.settings"
+python_files = ["test_*.py", "*_test.py"]
